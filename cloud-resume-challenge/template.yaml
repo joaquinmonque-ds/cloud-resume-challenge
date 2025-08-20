@@ -101,7 +101,7 @@ Resources:
     Properties:
       CodeUri: get-function/
       Handler: get_function.lambda_handler # app.py with lambda_handler inside
-      Runtime: python3.13
+      Runtime: python3.12
       Architectures:
         - x86_64
       Policies:
@@ -126,7 +126,7 @@ Resources:
     Properties:
       CodeUri: put-function/
       Handler: put_function.lambda_handler # put_function.py with lambda_handler
-      Runtime: python3.13
+      Runtime: python3.12
       Architectures:
         - x86_64
       Policies:
