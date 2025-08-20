@@ -27,14 +27,13 @@ jobs:
           GET_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'get_function.py' | head -n1)")
           PUT_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'put_function.py' | head -n1)")
 
-          # Provide fallbacks
           [ -z "$REQS" ] && echo "No requirements-dev.txt found, will install pytest/moto/boto3 directly."
           [ -z "$TEMPLATE" ] && { echo "ERROR: template.yaml not found"; exit 1; }
 
-          echo "REQS=$REQS"       >> $GITHUB_ENV
+          echo "REQS=$REQS"         >> $GITHUB_ENV
           echo "TEMPLATE=$TEMPLATE" >> $GITHUB_ENV
-          echo "GET_DIR=$GET_DIR" >> $GITHUB_ENV
-          echo "PUT_DIR=$PUT_DIR" >> $GITHUB_ENV
+          echo "GET_DIR=$GET_DIR"   >> $GITHUB_ENV
+          echo "PUT_DIR=$PUT_DIR"   >> $GITHUB_ENV
 
           echo "Found:"
           echo "  REQS     = $REQS"
@@ -60,9 +59,7 @@ jobs:
       - name: Run tests (if any)
         shell: bash
         run: |
-          # Make Lambda modules importable
           export PYTHONPATH="${GET_DIR:-.}:${PUT_DIR:-.}"
-          # Run tests only if at least one exists
           if find . -maxdepth 6 -type f -path "*/tests/*.py" | grep -q .; then
             pytest -q
           else
@@ -82,3 +79,22 @@ jobs:
 
       - name: Build SAM
         run: sam build -t "$TEMPLATE"
+
+      # ===== Deploy only on pushes to main =====
+      - name: Configure AWS credentials (OIDC)
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Deploy SAM
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sam deploy \
+            -t "$TEMPLATE" \
+            --stack-name cloud-resume-challenge \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM
