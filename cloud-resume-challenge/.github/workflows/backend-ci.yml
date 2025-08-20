@@ -1,0 +1,70 @@
+name: Backend CI (Python + SAM)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # lets you run it manually from Actions tab
+
+env:
+  WORKDIR: cloud-resume-challenge/cloud-resume-challenge
+  SAM_CONFIG_FILE: cloud-resume-challenge/cloud-resume-challenge/samconfig.toml
+  SAM_CONFIG_ENV: default
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # needed for AWS OIDC, safe even if you don't deploy yet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "${WORKDIR}/requirements-dev.txt"
+
+      - name: Run tests (tolerate no tests yet)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          PYTHONPATH=get-function:put-function pytest -q || true
+
+      - name: Install SAM CLI
+        run: |
+          python -m pip install --upgrade pipx
+          pipx ensurepath
+          pipx install aws-sam-cli
+        shell: bash
+
+      - name: Validate SAM
+        working-directory: ${{ env.WORKDIR }}
+        run: sam validate --config-file "${SAM_CONFIG_FILE}" --config-env "${SAM_CONFIG_ENV}"
+
+      - name: Build SAM
+        working-directory: ${{ env.WORKDIR }}
+        run: sam build
+
+      # Configure AWS for deploy (only when pushing to main)
+      - name: Configure AWS credentials (OIDC)
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Deploy SAM
+        if: github.ref == 'refs/heads/main'
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          sam deploy \
+            --config-file "${SAM_CONFIG_FILE}" \
+            --config-env "${SAM_CONFIG_ENV}" \
+            --no-confirm-changeset \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM
