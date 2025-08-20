@@ -30,10 +30,10 @@ jobs:
           [ -z "$REQS" ] && echo "No requirements-dev.txt found, will install pytest/moto/boto3 directly."
           [ -z "$TEMPLATE" ] && { echo "ERROR: template.yaml not found"; exit 1; }
 
-          echo "REQS=$REQS"         >> $GITHUB_ENV
+          echo "REQS=$REQS" >> $GITHUB_ENV
           echo "TEMPLATE=$TEMPLATE" >> $GITHUB_ENV
-          echo "GET_DIR=$GET_DIR"   >> $GITHUB_ENV
-          echo "PUT_DIR=$PUT_DIR"   >> $GITHUB_ENV
+          echo "GET_DIR=$GET_DIR" >> $GITHUB_ENV
+          echo "PUT_DIR=$PUT_DIR" >> $GITHUB_ENV
 
           echo "Found:"
           echo "  REQS     = $REQS"
@@ -66,13 +66,10 @@ jobs:
             echo "No tests found; skipping."
           fi
 
-      - name: Install SAM CLI
-        shell: bash
-        run: |
-          python -m pip install --upgrade pipx
-          pipx ensurepath
-          pipx install aws-sam-cli
-          sam --version
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          version: 'latest'
 
       - name: Validate SAM
         run: sam validate -t "$TEMPLATE"
@@ -86,9 +83,11 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
           aws-region: us-east-1
+          audience: sts.amazonaws.com
 
-            - name: Deploy SAM
+      - name: Deploy SAM
         if: github.ref == 'refs/heads/main'
         run: |
           sam deploy \
@@ -99,4 +98,3 @@ jobs:
             --no-fail-on-empty-changeset \
             --resolve-s3 \
             --capabilities CAPABILITY_IAM
-
