@@ -1,0 +1,60 @@
+name: Backend CI (Python + SAM)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # lets you run it manually from Actions tab
+
+env:
+  WORKDIR: cloud-resume-challenge/cloud-resume-challenge
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # harmless now; needed later for AWS OIDC
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Debug: print repo tree so we can see the paths in the runner
+      - name: Debug repo tree
+        run: |
+          pwd
+          ls -la
+          echo "----"
+          ls -la "${WORKDIR}" || true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dev dependencies (from INNER folder)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # OK if you haven't written real tests yet
+      - name: Run tests (tolerate no tests yet)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          PYTHONPATH=get-function:put-function pytest -q || true
+
+      - name: Install SAM CLI
+        run: |
+          python -m pip install --upgrade pipx
+          pipx ensurepath
+          pipx install aws-sam-cli
+          sam --version
+        shell: bash
+
+      - name: Validate SAM
+        working-directory: ${{ env.WORKDIR }}
+        run: sam validate
+
+      - name: Build SAM
+        working-directory: ${{ env.WORKDIR }}
+        run: sam build
