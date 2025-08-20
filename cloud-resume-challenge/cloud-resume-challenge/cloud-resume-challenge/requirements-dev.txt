@@ -1,3 +1,0 @@
-pytest
-moto[dynamodb]>=5
-boto3
