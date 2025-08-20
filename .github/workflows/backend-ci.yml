@@ -15,44 +15,70 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Debug: print tree so we can see actual paths in the runner
-      - name: Debug repo tree
+      # Locate key files dynamically so we don't depend on exact paths
+      - name: Locate project paths
+        id: locate
+        shell: bash
         run: |
-          pwd
-          ls -la
-          echo "---- level 1 ----"
-          ls -la cloud-resume-challenge || true
-          echo "---- level 2 ----"
-          ls -la cloud-resume-challenge/cloud-resume-challenge || true
-          echo "---- find template.yaml ----"
-          find . -name template.yaml -maxdepth 4 -print
+          set -e
+          echo "Scanning for files..."
+          REQS=$(find . -maxdepth 6 -type f -name 'requirements-dev.txt' | head -n1)
+          TEMPLATE=$(find . -maxdepth 6 -type f -name 'template.yaml' | head -n1)
+          GET_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'get_function.py' | head -n1)")
+          PUT_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'put_function.py' | head -n1)")
+
+          # Provide fallbacks
+          [ -z "$REQS" ] && echo "No requirements-dev.txt found, will install pytest/moto/boto3 directly."
+          [ -z "$TEMPLATE" ] && { echo "ERROR: template.yaml not found"; exit 1; }
+
+          echo "REQS=$REQS"       >> $GITHUB_ENV
+          echo "TEMPLATE=$TEMPLATE" >> $GITHUB_ENV
+          echo "GET_DIR=$GET_DIR" >> $GITHUB_ENV
+          echo "PUT_DIR=$PUT_DIR" >> $GITHUB_ENV
+
+          echo "Found:"
+          echo "  REQS     = $REQS"
+          echo "  TEMPLATE = $TEMPLATE"
+          echo "  GET_DIR  = $GET_DIR"
+          echo "  PUT_DIR  = $PUT_DIR"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dev dependencies (inner folder path)
+      - name: Install dev dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r cloud-resume-challenge/cloud-resume-challenge/requirements-dev.txt
+          if [ -n "$REQS" ]; then
+            pip install -r "$REQS"
+          else
+            pip install pytest "moto[dynamodb]>=5" boto3
+          fi
 
-      # OK if you haven't written real tests yet
-      - name: Run tests (tolerate no tests yet)
+      - name: Run tests (if any)
+        shell: bash
         run: |
-          PYTHONPATH=cloud-resume-challenge/cloud-resume-challenge/get-function:cloud-resume-challenge/cloud-resume-challenge/put-function \
-          pytest -q cloud-resume-challenge/cloud-resume-challenge/tests || true
+          # Make Lambda modules importable
+          export PYTHONPATH="${GET_DIR:-.}:${PUT_DIR:-.}"
+          # Run tests only if at least one exists
+          if find . -maxdepth 6 -type f -path "*/tests/*.py" | grep -q .; then
+            pytest -q
+          else
+            echo "No tests found; skipping."
+          fi
 
       - name: Install SAM CLI
+        shell: bash
         run: |
           python -m pip install --upgrade pipx
           pipx ensurepath
           pipx install aws-sam-cli
           sam --version
-        shell: bash
 
-      - name: Validate SAM (point to inner template.yaml)
-        run: sam validate -t cloud-resume-challenge/cloud-resume-challenge/template.yaml
+      - name: Validate SAM
+        run: sam validate -t "$TEMPLATE"
 
-      - name: Build SAM (point to inner template.yaml)
-        run: sam build -t cloud-resume-challenge/cloud-resume-challenge/template.yaml
+      - name: Build SAM
+        run: sam build -t "$TEMPLATE"
