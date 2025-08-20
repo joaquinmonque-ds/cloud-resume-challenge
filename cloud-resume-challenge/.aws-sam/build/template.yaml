@@ -1,0 +1,164 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'cloud-resume-challenge
+
+  '
+Globals:
+  Function:
+    Timeout: 5
+    MemorySize: 128
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+Resources:
+  MyWebsite:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: joaquin-monque-resume-challenge-website
+      WebsiteConfiguration:
+        IndexDocument: index.html
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cloud-resume-challenge
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: ID
+        AttributeType: S
+      KeySchema:
+      - AttributeName: ID
+        KeyType: HASH
+  MyDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+        - DomainName: joaquin-monque-resume-challenge-website.s3-website-us-east-1.amazonaws.com
+          Id: S3Origin
+          CustomOriginConfig:
+            OriginProtocolPolicy: match-viewer
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: allow-all
+          ForwardedValues:
+            QueryString: false
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 0
+  MyWebsitePolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: MyWebsite
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal: '*'
+          Action: s3:GetObject
+          Resource:
+            Fn::Sub: ${MyWebsite.Arn}/*
+  MyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: '''GET,POST,OPTIONS'''
+        AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+        AllowOrigin: '''*'''
+  GetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: GetFunction
+      Handler: get_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: cloud-resume-challenge
+      Events:
+        GetCount:
+          Type: Api
+          Properties:
+            Path: /get
+            Method: GET
+            RestApiId:
+              Ref: MyApi
+      Environment:
+        Variables:
+          PARAM1: VALUE
+    Metadata:
+      SamResourceId: GetFunction
+  PutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: PutFunction
+      Handler: put_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+      - x86_64
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName: cloud-resume-challenge
+      Events:
+        PutCount:
+          Type: Api
+          Properties:
+            Path: /put
+            Method: POST
+            RestApiId:
+              Ref: MyApi
+      Environment:
+        Variables:
+          PARAM1: VALUE
+    Metadata:
+      SamResourceId: PutFunction
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+Outputs:
+  GetFunctionAPI:
+    Description: API Gateway endpoint URL for GET (visitor counter)
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/get
+  GetFunction:
+    Description: GET Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - GetFunction
+      - Arn
+  GetFunctionIamRole:
+    Description: IAM Role created for GetFunction
+    Value:
+      Fn::GetAtt:
+      - GetFunctionRole
+      - Arn
+  PutFunctionAPI:
+    Description: API Gateway endpoint URL for PUT (increment visitor counter)
+    Value:
+      Fn::Sub: https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/put
+  PutFunction:
+    Description: PUT Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - PutFunction
+      - Arn
+  PutFunctionIamRole:
+    Description: IAM Role created for PutFunction
+    Value:
+      Fn::GetAtt:
+      - PutFunctionRole
+      - Arn
