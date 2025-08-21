@@ -1,0 +1,45 @@
+name: Frontend CD (S3 + CloudFront)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloud-resume-challenge/resume-site/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: frontend-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: github-actions-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Sync site to S3
+        env:
+          BUCKET: ${{ secrets.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$BUCKET" || (echo "S3_BUCKET secret is missing" && exit 1)
+          aws s3 sync cloud-resume-challenge/resume-site "s3://$BUCKET" --delete
+
+      - name: Invalidate CloudFront
+        env:
+          DIST_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$DIST_ID" || (echo "CLOUDFRONT_DISTRIBUTION_ID secret is missing" && exit 1)
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
