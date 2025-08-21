@@ -1,3 +1,7 @@
+<!-- CI/CD Badges -->
+[![Backend CI](https://github.com/joaquinmonque-ds/cloud-resume-challenge/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/joaquinmonque-ds/cloud-resume-challenge/actions/workflows/backend-ci.yml)
+[![Frontend CD](https://github.com/joaquinmonque-ds/cloud-resume-challenge/actions/workflows/frontend-cd.yml/badge.svg?branch=main)](https://github.com/joaquinmonque-ds/cloud-resume-challenge/actions/workflows/frontend-cd.yml)
+
 # cloud-resume-challenge
 
 This is a sample template for cloud-resume-challenge - Below is a brief explanation of what we have generated for you:
