@@ -1,0 +1,102 @@
+name: Backend CI (Python + SAM)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Locate key files dynamically so we don't depend on exact paths
+      - name: Locate project paths
+        id: locate
+        shell: bash
+        run: |
+          set -e
+          echo "Scanning for files..."
+          REQS=$(find . -maxdepth 6 -type f -name 'requirements-dev.txt' | head -n1)
+          TEMPLATE=$(find . -maxdepth 6 -type f -name 'template.yaml' | head -n1)
+          GET_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'get_function.py' | head -n1)")
+          PUT_DIR=$(dirname "$(find . -maxdepth 6 -type f -name 'put_function.py' | head -n1)")
+
+          [ -z "$REQS" ] && echo "No requirements-dev.txt found, will install pytest/moto/boto3 directly."
+          [ -z "$TEMPLATE" ] && { echo "ERROR: template.yaml not found"; exit 1; }
+
+          echo "REQS=$REQS"         >> $GITHUB_ENV
+          echo "TEMPLATE=$TEMPLATE" >> $GITHUB_ENV
+          echo "GET_DIR=$GET_DIR"   >> $GITHUB_ENV
+          echo "PUT_DIR=$PUT_DIR"   >> $GITHUB_ENV
+
+          echo "Found:"
+          echo "  REQS     = $REQS"
+          echo "  TEMPLATE = $TEMPLATE"
+          echo "  GET_DIR  = $GET_DIR"
+          echo "  PUT_DIR  = $PUT_DIR"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dev dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -n "$REQS" ]; then
+            pip install -r "$REQS"
+          else
+            pip install pytest "moto[dynamodb]>=5" boto3
+          fi
+
+      - name: Run tests (if any)
+        shell: bash
+        run: |
+          export PYTHONPATH="${GET_DIR:-.}:${PUT_DIR:-.}"
+          if find . -maxdepth 6 -type f -path "*/tests/*.py" | grep -q .; then
+            pytest -q
+          else
+            echo "No tests found; skipping."
+          fi
+
+      - name: Install SAM CLI
+        shell: bash
+        run: |
+          python -m pip install --upgrade pipx
+          pipx ensurepath
+          pipx install aws-sam-cli
+          sam --version
+
+      - name: Validate SAM
+        run: sam validate -t "$TEMPLATE"
+
+      - name: Build SAM
+        run: sam build -t "$TEMPLATE"
+
+      # ===== Deploy only on pushes to main =====
+      - name: Configure AWS credentials (OIDC)
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+            - name: Deploy SAM
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sam deploy \
+            -t "$TEMPLATE" \
+            --stack-name cloud-resume-challenge \
+            --role-arn "${{ secrets.CFN_EXEC_ROLE_ARN }}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM
+
