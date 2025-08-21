@@ -87,6 +87,32 @@ jobs:
           aws-region: us-east-1
           audience: sts.amazonaws.com
 
+      - name: Wait until stack is not IN_PROGRESS
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          STACK_NAME="cloud-resume-challenge"
+          echo "Checking CloudFormation status for $STACK_NAME ..."
+          for i in {1..60}; do
+            STATUS=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --query "Stacks[0].StackStatus" \
+              --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+            echo "Current status: $STATUS"
+            case "$STATUS" in
+              *IN_PROGRESS) sleep 10 ;;
+              DELETE_COMPLETE|ROLLBACK_COMPLETE|UPDATE_COMPLETE|CREATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|STACK_NOT_FOUND)
+                echo "Stack is free to update."
+                break
+                ;;
+              *)
+                echo "Proceeding (status: $STATUS)"
+                break
+                ;;
+            esac
+          done
+
       - name: Deploy SAM
         if: github.ref == 'refs/heads/main'
         run: |
